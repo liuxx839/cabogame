@@ -1,0 +1,297 @@
+/* (保留所有原有CSS) */
+:root {
+    --board-bg: #0a6b29;
+    --card-bg: #f0f0f0;
+    --card-back-bg: #a52a2a;
+    --card-border: #333;
+    --text-color: #fff;
+    --select-color: #00bfff;
+    --peek-color: #ff69b4;
+}
+
+body {
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    background-color: #2c2c2c;
+    color: var(--text-color);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 100vh;
+    margin: 0;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+#main-container {
+    display: flex;
+    flex-direction: row;
+    gap: 20px;
+    width: 100%;
+    max-width: 1400px;
+    align-items: flex-start;
+}
+
+#left-column {
+    flex: 0 0 280px;
+}
+
+#right-column {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+#game-board {
+    width: 85vmin;
+    height: 85vmin;
+    max-width: 700px;
+    max-height: 700px;
+    background-color: var(--board-bg);
+    border: 10px solid #5c3a21;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    box-sizing: border-box;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.center-row {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.player-area {
+    text-align: center;
+    padding: 10px;
+    border-radius: 10px;
+    transition: background-color 0.3s;
+}
+
+.player-area.active-player {
+    background-color: rgba(255, 255, 0, 0.2);
+    box-shadow: 0 0 15px yellow;
+}
+
+.player-name {
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.hand {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    min-height: 94px;
+}
+
+.card {
+    width: 60px;
+    height: 90px;
+    border: 2px solid var(--card-border);
+    border-radius: 8px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+    position: relative;
+    background-color: var(--card-back-bg);
+    color: transparent;
+    user-select: none;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card.face-up, .card.peeked {
+    background-color: var(--card-bg);
+    color: #000;
+}
+
+.card.peeked {
+    box-shadow: 0 0 15px var(--peek-color);
+    border-color: var(--peek-color);
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 5px 10px rgba(0,0,0,0.3);
+}
+
+.card.selected {
+    border-color: yellow;
+    box-shadow: 0 0 15px yellow;
+    transform: translateY(-10px);
+}
+
+.card.selectable {
+    cursor: crosshair;
+    border-color: var(--select-color);
+    box-shadow: 0 0 15px var(--select-color);
+}
+
+.center-pile {
+    display: flex;
+    gap: 20px;
+}
+
+.card-pile {
+    width: 60px;
+    height: 90px;
+    border: 2px dashed #fff;
+    border-radius: 8px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    font-size: 14px;
+    text-align: center;
+}
+
+.card-pile.deck {
+    background-color: var(--card-back-bg);
+}
+
+.card-pile .card {
+    pointer-events: none;
+}
+
+#controls {
+    width: 90vmin;
+    max-width: 700px;
+    background-color: #222;
+    padding: 15px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+#game-info { flex-grow: 1; }
+#log { margin: 0 0 10px 0; min-height: 20px; }
+
+#action-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+#action-buttons button {
+    padding: 10px 15px;
+    font-size: 14px;
+    cursor: pointer;
+    border-radius: 5px;
+    border: none;
+    background-color: #3f51b5;
+    color: white;
+}
+#action-buttons button.confirm-btn { background-color: #4CAF50; }
+#action-buttons button.cancel-btn { background-color: #f44336; }
+
+#cabo-button, #start-button {
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    border-radius: 5px;
+    border: none;
+    background-color: #4CAF50;
+    color: white;
+}
+
+#cabo-button:disabled {
+    background-color: #666;
+    cursor: not-allowed;
+}
+
+.win-rate-container { display: flex; align-items: center; gap: 10px; }
+#win-rate-bar-container {
+    width: 200px;
+    height: 20px;
+    background-color: #555;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #777;
+}
+#win-rate-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, rgba(255,69,0,1) 0%, rgba(255,255,0,1) 50%, rgba(76,175,80,1) 100%);
+    transition: width 0.5s ease-in-out;
+}
+#win-rate-text { font-weight: bold; font-size: 1.1em; }
+
+.collapsible-panels-container {
+    display: flex;
+    gap: 15px;
+    width: 90vmin;
+    max-width: 700px;
+    margin-top: 10px;
+}
+
+details {
+    flex: 1;
+    background-color: #2a2a2a;
+    border-radius: 8px;
+    border: 1px solid #444;
+}
+
+summary {
+    padding: 10px;
+    font-weight: bold;
+    cursor: pointer;
+    background-color: #333;
+    border-radius: 8px 8px 0 0;
+}
+
+.panel-content {
+    padding: 10px;
+    max-height: 580px; /* MODIFIED: Increased height for bigger chart */
+    overflow-y: auto;
+}
+
+#scoreboard-content table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+#scoreboard-content th, #scoreboard-content td {
+    text-align: left;
+    padding: 8px;
+    border-bottom: 1px solid #444;
+}
+#scoreboard-content th { font-weight: bold; color: #ffc107; }
+#scoreboard-content td:nth-child(2) { text-align: center; }
+#scoreboard-content td:nth-child(3) { text-align: center; font-weight: bold; }
+
+#win-prob-chart-container {
+    background-color: #fff;
+    border-radius: 5px;
+}
+
+#action-log-content p {
+    margin: 2px 0;
+    padding: 3px 5px;
+    border-radius: 3px;
+    font-size: 14px;
+}
+.log-turn { color: #aaa; font-style: italic; }
+.log-draw { background-color: rgba(0, 191, 255, 0.2); }
+.log-swap { background-color: rgba(255, 165, 0, 0.2); }
+.log-ability { background-color: rgba(255, 105, 180, 0.2); }
+.log-cabo { background-color: rgba(255, 255, 0, 0.3); color: #000; font-weight: bold; }
+.log-end { background-color: rgba(76, 175, 80, 0.3); font-weight: bold; }
+
+.card.image-card.face-up {
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    color: transparent;
+    background-color: var(--card-bg);
+}
