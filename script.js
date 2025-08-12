@@ -16,7 +16,7 @@ const CABO_FAIL_PENALTY = 10;
 const PLAYER_UI_SIMULATION_COUNT = 3000;
 const HISTORY_SIMULATION_COUNT = 3000;
 const BOT_CABO_WIN_PROB_THRESHOLD = 0.70;
-const MULTI_SWAP_PROB_INCREASE_THRESHOLD = 0.10; // NEW: Bot will only multi-swap if win prob increases by at least 10%
+const MULTI_SWAP_PROB_INCREASE_THRESHOLD = 0.10;
 
 let useCardImages = false;
 const CARD_IMAGE_PATH = 'card_image/';
@@ -215,21 +215,43 @@ function drawFromDiscard() {
     if (state.currentPlayerIndex !== 0 || state.gamePhase !== 'playing' || state.discardPile.length === 0) return;
     state.drawnCard = state.discardPile.pop();
     logAction(0, 'draw', `从弃牌堆拿起 ${state.drawnCard.value}`);
-    state.gamePhase = 'swapping';
-    updateLog(`你从弃牌堆拿了 ${state.drawnCard.value}。必须选择一张手牌替换。`);
+    // BUGFIX 1: Use a specific game phase for swapping from discard
+    state.gamePhase = 'swapping_from_discard'; 
+    updateLog(`你从弃牌堆拿了 ${state.drawnCard.value}。必须选择一张手牌替换，这张牌将保持面朝上。`);
     render();
 }
-function selectPlayerCardToSwap(cardIndex) {
-    if (state.gamePhase !== 'swapping' || !state.drawnCard) return;
+
+// BUGFIX 1: This function now ONLY handles swapping from the discard pile.
+function selectPlayerCardToSwapFromDiscard(cardIndex) {
+    if (state.gamePhase !== 'swapping_from_discard' || !state.drawnCard) return;
     const player = state.players[0];
     const discardedCard = player.hand[cardIndex];
+
     player.hand[cardIndex] = state.drawnCard;
-    player.knowledge[0][cardIndex] = state.drawnCard;
+    player.hand[cardIndex].isFaceUp = true;
+
+    for (let i = 0; i < NUM_PLAYERS; i++) {
+        state.players[i].knowledge[0][cardIndex] = player.hand[cardIndex];
+    }
     state.discardPile.push(discardedCard);
-    logAction(0, 'swap', `用 ${state.drawnCard.value} 换掉了手牌 (原为 ${discardedCard.value})`);
+    logAction(0, 'swap', `用弃牌堆的 ${state.drawnCard.value} 换掉了手牌 (原为 ${discardedCard.value})。这张新牌将保持面朝上。`);
     state.drawnCard = null;
     endPlayerTurn();
 }
+
+// BUGFIX 1: New function to handle swapping with a card drawn from the deck.
+function selectPlayerCardToSwapFromDeck(cardIndex) {
+    if (state.gamePhase !== 'swapping_from_deck' || !state.drawnCard) return;
+    const player = state.players[0];
+    const discardedCard = player.hand[cardIndex];
+    player.hand[cardIndex] = state.drawnCard;
+    player.knowledge[0][cardIndex] = state.drawnCard; // Only you know this new card
+    state.discardPile.push(discardedCard);
+    logAction(0, 'swap', `用摸到的 ${state.drawnCard.value} 换掉了手牌 (原为 ${discardedCard.value})`);
+    state.drawnCard = null;
+    endPlayerTurn();
+}
+
 function discardDrawnCard() {
     if (!state.drawnCard) return;
     logAction(0, 'swap', `丢弃了摸到的 ${state.drawnCard.value}`);
@@ -315,10 +337,11 @@ function renderPostDrawActions() {
     const ability = state.drawnCard.ability;
     const discardBtn = document.createElement('button');
     discardBtn.innerText = '常规交换/丢弃';
+    // BUGFIX 1: Set the correct game phase for swapping from the deck.
     discardBtn.onclick = () => {
-        state.gamePhase = 'swapping';
+        state.gamePhase = 'swapping_from_deck';
         actionButtonsDiv.innerHTML = '';
-        updateLog('选择一张手牌替换，或点击弃牌堆放弃。');
+        updateLog('选择一张手牌替换，或点击弃牌堆放弃交换。');
         render();
     };
     actionButtonsDiv.appendChild(discardBtn);
@@ -497,18 +520,15 @@ function executeBotAbility(bot, drawnCard) {
     return false;
 }
 
-// NEW: Helper function for bot to evaluate a multi-swap
 function evaluateMultiSwap(bot, drawnCard, indicesToSwap) {
-    // Create a deep copy of the state to simulate on
     const simState = JSON.parse(JSON.stringify(state));
-    const originalState = state; // Keep a reference to the real state
+    const originalState = state; 
 
     try {
-        state = simState; // Temporarily switch global state to the simulation
+        state = simState; 
         
         const simBot = state.players[bot.id];
         const valueToMatch = simBot.hand[indicesToSwap[0]].value;
-
         const discardedCards = [];
         const newHand = [], newKnowledge = [];
 
@@ -527,22 +547,18 @@ function evaluateMultiSwap(bot, drawnCard, indicesToSwap) {
         while (newKnowledge.length < INITIAL_CARDS_PER_HAND) { newKnowledge.push(null); }
         simBot.knowledge[simBot.id] = newKnowledge;
         discardedCards.forEach(c => state.discardPile.push(c));
-
-        // Now, calculate win probability in this simulated future
         return calculateWinProbabilityForPlayer(bot.id, PLAYER_UI_SIMULATION_COUNT);
 
     } finally {
-        state = originalState; // IMPORTANT: Always restore the original state
+        state = originalState;
     }
 }
 
-// NEW: Helper function to actually perform the multi-swap for the bot
 function executeMultiSwapForBot(bot, drawnCard, indicesToSwap) {
     const valueToMatch = bot.hand[indicesToSwap[0]].value;
     logAction(bot.id, 'swap', `执行多换一, 用 ${indicesToSwap.length} 张 ${valueToMatch} 交换摸到的 ${drawnCard.value}`);
 
     const discardedCards = [], newHand = [], newKnowledge = [];
-    // Use a reverse loop for safe removal by index
     for (let i = bot.hand.length - 1; i >= 0; i--) {
         if (indicesToSwap.includes(i)) {
             discardedCards.push(bot.hand.splice(i, 1)[0]);
@@ -556,8 +572,6 @@ function executeMultiSwapForBot(bot, drawnCard, indicesToSwap) {
     discardedCards.forEach(c => state.discardPile.push(c));
 }
 
-
-// --- REFACTORED: Bot AI Turn with Multi-Swap Evaluation ---
 function botTurn() {
     const bot = state.players[state.currentPlayerIndex];
     const topDiscard = state.discardPile[state.discardPile.length - 1];
@@ -575,9 +589,15 @@ function botTurn() {
         const indexToSwap = (maxKnownIndex !== -1) ? maxKnownIndex : Math.floor(Math.random() * bot.hand.length);
         const discarded = bot.hand[indexToSwap];
         bot.hand[indexToSwap] = drawnCard;
-        bot.knowledge[bot.id][indexToSwap] = drawnCard;
+        
+        bot.hand[indexToSwap].isFaceUp = true;
+
+        for (let i = 0; i < NUM_PLAYERS; i++) {
+            state.players[i].knowledge[bot.id][indexToSwap] = bot.hand[indexToSwap];
+        }
+
         state.discardPile.push(discarded);
-        logAction(bot.id, 'draw', `从弃牌堆拿 ${drawnCard.value} 替换了一张牌 (原为 ${discarded.value})`);
+        logAction(bot.id, 'draw', `从弃牌堆拿 ${drawnCard.value} 替换了一张牌 (原为 ${discarded.value})。这张新牌将保持面朝上。`);
     
     } else {
         if (state.deck.length === 0) {
@@ -588,13 +608,12 @@ function botTurn() {
         const drawnCard = state.deck.pop();
         logAction(bot.id, 'draw', `从牌堆摸了一张牌 (${drawnCard.value})`);
 
-        // --- NEW: Multi-Swap Evaluation Logic ---
         let multiSwapExecuted = false;
         const cardCounts = new Map();
         bot.hand.forEach(card => cardCounts.set(card.value, (cardCounts.get(card.value) || 0) + 1));
         
         for (const [value, count] of cardCounts.entries()) {
-            if (count > 1) { // Found a potential multi-swap
+            if (count > 1) {
                 const indicesToSwap = bot.hand.map((card, index) => card.value === value ? index : -1).filter(index => index !== -1);
                 
                 const probBefore = calculateWinProbabilityForPlayer(bot.id, PLAYER_UI_SIMULATION_COUNT);
@@ -603,12 +622,11 @@ function botTurn() {
                 if (probAfter > probBefore + MULTI_SWAP_PROB_INCREASE_THRESHOLD) {
                     executeMultiSwapForBot(bot, drawnCard, indicesToSwap);
                     multiSwapExecuted = true;
-                    break; // Exit loop after finding and executing a good swap
+                    break;
                 }
             }
         }
         
-        // If multi-swap was not beneficial or possible, proceed with old logic
         if (!multiSwapExecuted) {
             let usedAbility = false;
             if (drawnCard.ability !== 'none') {
@@ -625,19 +643,29 @@ function botTurn() {
                          currentMaxKnownIndex = i;
                      }
                  });
-
-                const valueToReplace = (currentMaxKnownIndex !== -1) ? currentMaxKnownValue : 14; 
                 
-                if (drawnCard.value < valueToReplace) {
-                     const indexToSwap = (currentMaxKnownIndex !== -1) ? currentMaxKnownIndex : Math.floor(Math.random() * bot.hand.length);
-                     const discarded = bot.hand[indexToSwap];
-                     bot.hand[indexToSwap] = drawnCard;
-                     bot.knowledge[bot.id][indexToSwap] = drawnCard;
+                if (drawnCard.value < currentMaxKnownValue) {
+                     const discarded = bot.hand[currentMaxKnownIndex];
+                     bot.hand[currentMaxKnownIndex] = drawnCard;
+                     bot.knowledge[bot.id][currentMaxKnownIndex] = drawnCard;
                      state.discardPile.push(discarded);
                      logAction(bot.id, 'swap', `用摸到的 ${drawnCard.value} 换了一张牌 (原为 ${discarded.value})`);
                 } else {
-                    state.discardPile.push(drawnCard);
-                    logAction(bot.id, 'swap', `直接弃掉了摸到的 ${drawnCard.value}`);
+                    // BUGFIX 2: Enhanced AI logic. If drawn card is not better than a known card,
+                    // check if it's a good candidate to replace an UNKNOWN card.
+                    const unknownCardIndex = bot.knowledge[bot.id].findIndex(k => k === null);
+                    // A low-value card (e.g. <=4) is a good candidate to replace an unknown card.
+                    if (unknownCardIndex !== -1 && drawnCard.value <= 4) {
+                        const discarded = bot.hand[unknownCardIndex];
+                        bot.hand[unknownCardIndex] = drawnCard;
+                        bot.knowledge[bot.id][unknownCardIndex] = drawnCard;
+                        state.discardPile.push(discarded);
+                        logAction(bot.id, 'swap', `用摸到的 ${drawnCard.value} 换掉了一张未知牌`);
+                    } else {
+                        // Otherwise, the drawn card is too high to risk, or there are no unknowns. Discard it.
+                        state.discardPile.push(drawnCard);
+                        logAction(bot.id, 'swap', `直接弃掉了摸到的 ${drawnCard.value}`);
+                    }
                 }
             }
         }
@@ -715,14 +743,19 @@ function render() {
         player.hand.forEach((card, c_idx) => {
             const cardDiv = document.createElement('div');
             cardDiv.className = 'card';
-            const isKnown = state.players[0].knowledge[p_idx][c_idx] || (p_idx === 0 && state.players[0].knowledge[0][c_idx]);
-            if (state.gamePhase === 'gameOver' || isKnown) {
+            
+            const isKnownByHuman = state.players[0].knowledge[p_idx][c_idx];
+            const isPubliclyFaceUp = card.isFaceUp === true;
+
+            if (state.gamePhase === 'gameOver' || isKnownByHuman || isPubliclyFaceUp) {
                 cardDiv.classList.add('face-up');
                 if (useCardImages) {
                     cardDiv.classList.add('image-card');
                     cardDiv.style.backgroundImage = `url(${CARD_IMAGE_PATH}${card.value}.png)`;
                 } else { cardDiv.innerText = card.value; }
             }
+
+            // BUGFIX 1: Set up card clicks to call the correct swap function based on game phase.
             if (state.currentPlayerIndex === 0) {
                 const phase = state.gamePhase;
                 if (phase === 'multi_swap_selection' && p_idx === 0) {
@@ -735,9 +768,12 @@ function render() {
                     (phase === 'ability_swap' && state.actionState.step === 'select_opponent_card' && p_idx !== 0)) {
                     cardDiv.classList.add('selectable');
                     cardDiv.onclick = () => handleAbilityClick(p_idx, c_idx);
-                } else if (phase === 'swapping' && p_idx === 0) {
+                } else if (phase === 'swapping_from_deck' && p_idx === 0) {
                     cardDiv.classList.add('selectable');
-                    cardDiv.onclick = () => selectPlayerCardToSwap(c_idx);
+                    cardDiv.onclick = () => selectPlayerCardToSwapFromDeck(c_idx);
+                } else if (phase === 'swapping_from_discard' && p_idx === 0) {
+                    cardDiv.classList.add('selectable');
+                    cardDiv.onclick = () => selectPlayerCardToSwapFromDiscard(c_idx);
                 }
             }
             handDiv.appendChild(cardDiv);
@@ -759,7 +795,8 @@ function render() {
     if (state.currentPlayerIndex === 0 && state.gamePhase === 'playing') {
         discardPileDiv.onclick = state.discardPile.length > 0 ? drawFromDiscard : null;
         deckPileDiv.onclick = state.deck.length > 0 ? drawFromDeck : null;
-    } else if (state.currentPlayerIndex === 0 && (state.gamePhase === 'swapping' || state.gamePhase === 'post_draw_action')) {
+    } else if (state.currentPlayerIndex === 0 && (state.gamePhase === 'swapping_from_deck' || state.gamePhase === 'post_draw_action')) {
+        // Player can click discard pile to cancel the swap from deck
         discardPileDiv.onclick = discardDrawnCard;
         deckPileDiv.onclick = null;
     } else {
