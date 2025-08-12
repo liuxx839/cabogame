@@ -14,8 +14,9 @@ const NUM_PLAYERS = 4;
 const INITIAL_CARDS_PER_HAND = 4;
 const CABO_FAIL_PENALTY = 10;
 const PLAYER_UI_SIMULATION_COUNT = 3000;
-const HISTORY_SIMULATION_COUNT = 500;
+const HISTORY_SIMULATION_COUNT = 3000;
 const BOT_CABO_WIN_PROB_THRESHOLD = 0.70;
+const MULTI_SWAP_PROB_INCREASE_THRESHOLD = 0.10; // NEW: Bot will only multi-swap if win prob increases by at least 10%
 
 let useCardImages = false;
 const CARD_IMAGE_PATH = 'card_image/';
@@ -379,25 +380,14 @@ function handleAbilityClick(playerId, cardIndex) {
                 const opponentCardIndex = cardIndex;
                 const ownCardIndex = state.actionState.ownCardIndex;
                 const opponent = state.players[playerId];
-
-                // MODIFIED: Store knowledge from player's perspective BEFORE the swap
                 const ownCardKnowledge = player.knowledge[0][ownCardIndex];
                 const opponentCardKnowledge = player.knowledge[playerId][opponentCardIndex];
-
-                // Perform the physical swap
                 const temp = player.hand[ownCardIndex];
                 player.hand[ownCardIndex] = opponent.hand[opponentCardIndex];
                 opponent.hand[opponentCardIndex] = temp;
-
-                // MODIFIED: Update player's knowledge based on pre-swap state
-                // The knowledge of your new card is what you knew about the card you received.
-                // The knowledge of the opponent's new card is what you knew about the card you gave.
                 player.knowledge[0][ownCardIndex] = opponentCardKnowledge;
                 player.knowledge[playerId][opponentCardIndex] = ownCardKnowledge;
-
-                // Opponent now knows the card they received in the swap
                 opponent.knowledge[playerId][opponentCardIndex] = opponent.hand[opponentCardIndex];
-                
                 logAction(0, 'ability', `与 ${getPlayerName(playerId)} 交换了手牌`);
                 updateLog(`你用你的牌和 ${getPlayerName(playerId)} 的牌交换了。`);
                 state.actionState = {};
@@ -425,13 +415,7 @@ function endPlayerTurn() {
     setTimeout(nextTurn, 500);
 }
 
-// --- MODIFIED: Bot Ability AI ---
-/**
- * Decides if and how a bot should use a card's ability.
- * @param {object} bot The bot player object.
- * @param {object} drawnCard The card with an ability.
- * @returns {boolean} True if an ability was successfully used, false otherwise.
- */
+// --- Bot AI ---
 function executeBotAbility(bot, drawnCard) {
     switch (drawnCard.ability) {
         case 'peek_self': {
@@ -442,12 +426,11 @@ function executeBotAbility(bot, drawnCard) {
                 logAction(bot.id, 'ability', `使用 ${drawnCard.value} 的能力，查看了自己的一张牌 (是 ${peekedCard.value})`);
                 return true;
             }
-            return false; // No unknown cards to peek
+            return false;
         }
-
         case 'peek_opponent': {
             const opponentIds = Array.from({ length: NUM_PLAYERS }, (_, i) => i).filter(id => id !== bot.id);
-            shuffle(opponentIds); // Randomize opponent order
+            shuffle(opponentIds);
             for (const pId of opponentIds) {
                 const unknownCardIndex = bot.knowledge[pId].findIndex(k => k === null);
                 if (unknownCardIndex !== -1 && unknownCardIndex < state.players[pId].hand.length) {
@@ -457,11 +440,9 @@ function executeBotAbility(bot, drawnCard) {
                     return true;
                 }
             }
-            return false; // All opponent cards are known
+            return false;
         }
-
         case 'swap': {
-            // Find bot's highest known card to trade away
             let [maxKnownValue, ownCardToSwapIndex] = [-1, -1];
             bot.knowledge[bot.id].forEach((card, i) => {
                 if (card && card.value > maxKnownValue) {
@@ -469,15 +450,8 @@ function executeBotAbility(bot, drawnCard) {
                     ownCardToSwapIndex = i;
                 }
             });
-
-            // Only swap if we have a known high card (e.g., > 6 is a reasonable threshold)
-            if (ownCardToSwapIndex === -1 || maxKnownValue <= 6) {
-                return false;
-            }
-
+            if (ownCardToSwapIndex === -1 || maxKnownValue <= 6) { return false; }
             const opponentIds = Array.from({ length: NUM_PLAYERS }, (_, i) => i).filter(id => id !== bot.id);
-
-            // --- STRATEGY 1: PRIORITIZE swapping with a a KNOWN low-value opponent card ---
             let bestTarget = { value: Infinity, pId: -1, cardIndex: -1 };
             for (const pId of opponentIds) {
                 bot.knowledge[pId].forEach((card, c_idx) => {
@@ -486,68 +460,108 @@ function executeBotAbility(bot, drawnCard) {
                     }
                 });
             }
-            
-            // If a beneficial swap with a known card is found, execute it.
             if (bestTarget.pId !== -1 && maxKnownValue > bestTarget.value) {
                 const { pId, cardIndex } = bestTarget;
                 const opponent = state.players[pId];
-
-                // Store knowledge for correct update
                 const ownCardKnowledge = bot.knowledge[bot.id][ownCardToSwapIndex];
-                const opponentCardKnowledge = bot.knowledge[pId][cardIndex]; // This is known
-
-                // Swap cards
+                const opponentCardKnowledge = bot.knowledge[pId][cardIndex];
                 const temp = bot.hand[ownCardToSwapIndex];
                 bot.hand[ownCardToSwapIndex] = opponent.hand[cardIndex];
                 opponent.hand[cardIndex] = temp;
-
-                // Update knowledge based on pre-swap state
                 bot.knowledge[bot.id][ownCardToSwapIndex] = opponentCardKnowledge;
                 bot.knowledge[pId][cardIndex] = ownCardKnowledge;
-                opponent.knowledge[pId][cardIndex] = opponent.hand[cardIndex]; // Opponent knows what they received
-
+                opponent.knowledge[pId][cardIndex] = opponent.hand[cardIndex];
                 logAction(bot.id, 'ability', `使用 ${drawnCard.value} 能力，用自己的 ${maxKnownValue} 与 ${getPlayerName(pId)} 的已知牌 ${bestTarget.value} 交换`);
                 return true;
             }
-
-            // --- STRATEGY 2 (Fallback): Swap with an UNKNOWN opponent card ---
             shuffle(opponentIds);
             for (const pId of opponentIds) {
                  const opponent = state.players[pId];
                  const opponentCardIndex = bot.knowledge[pId].findIndex(k => k === null);
-
                 if (opponentCardIndex !== -1 && opponentCardIndex < opponent.hand.length) {
-                    // Store knowledge for correct update
                     const ownCardKnowledge = bot.knowledge[bot.id][ownCardToSwapIndex];
-                    const opponentCardKnowledge = null; // Card is unknown
-
-                    // Swap cards
+                    const opponentCardKnowledge = null;
                     const temp = bot.hand[ownCardToSwapIndex];
                     bot.hand[ownCardToSwapIndex] = opponent.hand[opponentCardIndex];
                     opponent.hand[opponentCardIndex] = temp;
-
-                    // Update knowledge based on pre-swap state
-                    bot.knowledge[bot.id][ownCardToSwapIndex] = opponentCardKnowledge; // Becomes unknown (null)
+                    bot.knowledge[bot.id][ownCardToSwapIndex] = opponentCardKnowledge;
                     bot.knowledge[pId][opponentCardIndex] = ownCardKnowledge;
-                    opponent.knowledge[pId][opponentCardIndex] = opponent.hand[opponentCardIndex]; // Opponent knows their new card
-
+                    opponent.knowledge[pId][opponentCardIndex] = opponent.hand[opponentCardIndex];
                     logAction(bot.id, 'ability', `使用 ${drawnCard.value} 能力，用自己的 ${maxKnownValue} 与 ${getPlayerName(pId)} 的一张未知牌交换`);
                     return true;
                 }
             }
-            return false; // Didn't find any suitable swap
+            return false;
         }
     }
     return false;
 }
 
+// NEW: Helper function for bot to evaluate a multi-swap
+function evaluateMultiSwap(bot, drawnCard, indicesToSwap) {
+    // Create a deep copy of the state to simulate on
+    const simState = JSON.parse(JSON.stringify(state));
+    const originalState = state; // Keep a reference to the real state
 
-// --- REFACTORED: Bot AI Turn ---
+    try {
+        state = simState; // Temporarily switch global state to the simulation
+        
+        const simBot = state.players[bot.id];
+        const valueToMatch = simBot.hand[indicesToSwap[0]].value;
+
+        const discardedCards = [];
+        const newHand = [], newKnowledge = [];
+
+        for (let i = 0; i < simBot.hand.length; i++) {
+            if (indicesToSwap.includes(i)) {
+                discardedCards.push(simBot.hand[i]);
+            } else {
+                newHand.push(simBot.hand[i]);
+                newKnowledge.push(simBot.knowledge[simBot.id][i]);
+            }
+        }
+        newHand.push(drawnCard);
+        newKnowledge.push(drawnCard);
+
+        simBot.hand = newHand;
+        while (newKnowledge.length < INITIAL_CARDS_PER_HAND) { newKnowledge.push(null); }
+        simBot.knowledge[simBot.id] = newKnowledge;
+        discardedCards.forEach(c => state.discardPile.push(c));
+
+        // Now, calculate win probability in this simulated future
+        return calculateWinProbabilityForPlayer(bot.id, PLAYER_UI_SIMULATION_COUNT);
+
+    } finally {
+        state = originalState; // IMPORTANT: Always restore the original state
+    }
+}
+
+// NEW: Helper function to actually perform the multi-swap for the bot
+function executeMultiSwapForBot(bot, drawnCard, indicesToSwap) {
+    const valueToMatch = bot.hand[indicesToSwap[0]].value;
+    logAction(bot.id, 'swap', `执行多换一, 用 ${indicesToSwap.length} 张 ${valueToMatch} 交换摸到的 ${drawnCard.value}`);
+
+    const discardedCards = [], newHand = [], newKnowledge = [];
+    // Use a reverse loop for safe removal by index
+    for (let i = bot.hand.length - 1; i >= 0; i--) {
+        if (indicesToSwap.includes(i)) {
+            discardedCards.push(bot.hand.splice(i, 1)[0]);
+            bot.knowledge[bot.id].splice(i, 1);
+        }
+    }
+
+    bot.hand.push(drawnCard);
+    bot.knowledge[bot.id].push(drawnCard);
+
+    discardedCards.forEach(c => state.discardPile.push(c));
+}
+
+
+// --- REFACTORED: Bot AI Turn with Multi-Swap Evaluation ---
 function botTurn() {
     const bot = state.players[state.currentPlayerIndex];
     const topDiscard = state.discardPile[state.discardPile.length - 1];
 
-    // Find bot's highest known card value and its index
     let [maxKnownValue, maxKnownIndex] = [-1, -1];
     bot.knowledge[bot.id].forEach((card, i) => {
         if (card && card.value > maxKnownValue) {
@@ -556,18 +570,15 @@ function botTurn() {
         }
     });
 
-    // Step 1: Check if the discard pile top is a good, low-value card
     if (topDiscard && topDiscard.value <= 4 && (maxKnownIndex === -1 || topDiscard.value < maxKnownValue)) {
         const drawnCard = state.discardPile.pop();
-        // If bot knows a high card, swap it. Otherwise, guess a card to replace.
         const indexToSwap = (maxKnownIndex !== -1) ? maxKnownIndex : Math.floor(Math.random() * bot.hand.length);
         const discarded = bot.hand[indexToSwap];
         bot.hand[indexToSwap] = drawnCard;
-        bot.knowledge[bot.id][indexToSwap] = drawnCard; // Bot knows the new card
+        bot.knowledge[bot.id][indexToSwap] = drawnCard;
         state.discardPile.push(discarded);
         logAction(bot.id, 'draw', `从弃牌堆拿 ${drawnCard.value} 替换了一张牌 (原为 ${discarded.value})`);
     
-    // Step 2: If discard is not taken, draw from deck
     } else {
         if (state.deck.length === 0) {
             logAction(bot.id, 'draw', '发现牌堆已空, 跳过回合');
@@ -577,44 +588,61 @@ function botTurn() {
         const drawnCard = state.deck.pop();
         logAction(bot.id, 'draw', `从牌堆摸了一张牌 (${drawnCard.value})`);
 
-        // Step 3: Try to use the drawn card's ability
-        let usedAbility = false;
-        if (drawnCard.ability !== 'none') {
-            usedAbility = executeBotAbility(bot, drawnCard);
+        // --- NEW: Multi-Swap Evaluation Logic ---
+        let multiSwapExecuted = false;
+        const cardCounts = new Map();
+        bot.hand.forEach(card => cardCounts.set(card.value, (cardCounts.get(card.value) || 0) + 1));
+        
+        for (const [value, count] of cardCounts.entries()) {
+            if (count > 1) { // Found a potential multi-swap
+                const indicesToSwap = bot.hand.map((card, index) => card.value === value ? index : -1).filter(index => index !== -1);
+                
+                const probBefore = calculateWinProbabilityForPlayer(bot.id, PLAYER_UI_SIMULATION_COUNT);
+                const probAfter = evaluateMultiSwap(bot, drawnCard, indicesToSwap);
+
+                if (probAfter > probBefore + MULTI_SWAP_PROB_INCREASE_THRESHOLD) {
+                    executeMultiSwapForBot(bot, drawnCard, indicesToSwap);
+                    multiSwapExecuted = true;
+                    break; // Exit loop after finding and executing a good swap
+                }
+            }
         }
+        
+        // If multi-swap was not beneficial or possible, proceed with old logic
+        if (!multiSwapExecuted) {
+            let usedAbility = false;
+            if (drawnCard.ability !== 'none') {
+                usedAbility = executeBotAbility(bot, drawnCard);
+            }
 
-        // Step 4: If ability was used, discard the drawn card and end.
-        // If not, proceed with normal swap/discard logic.
-        if (usedAbility) {
-            state.discardPile.push(drawnCard);
-        } else {
-            // Find the highest known card *again* in case an ability changed it (though current logic doesn't)
-             let [currentMaxKnownValue, currentMaxKnownIndex] = [-1, -1];
-             bot.knowledge[bot.id].forEach((card, i) => {
-                 if (card && card.value > currentMaxKnownValue) {
-                     currentMaxKnownValue = card.value;
-                     currentMaxKnownIndex = i;
-                 }
-             });
-
-            // Decide whether to swap the drawn card with a card in hand
-            const valueToReplace = (currentMaxKnownIndex !== -1) ? currentMaxKnownValue : 14; // Assume 14 (worse than any card) if no card is known
-            
-            if (drawnCard.value < valueToReplace) {
-                 const indexToSwap = (currentMaxKnownIndex !== -1) ? currentMaxKnownIndex : Math.floor(Math.random() * bot.hand.length);
-                 const discarded = bot.hand[indexToSwap];
-                 bot.hand[indexToSwap] = drawnCard;
-                 bot.knowledge[bot.id][indexToSwap] = drawnCard; // Bot knows the new card
-                 state.discardPile.push(discarded);
-                 logAction(bot.id, 'swap', `用摸到的 ${drawnCard.value} 换了一张牌 (原为 ${discarded.value})`);
-            } else {
+            if (usedAbility) {
                 state.discardPile.push(drawnCard);
-                logAction(bot.id, 'swap', `直接弃掉了摸到的 ${drawnCard.value}`);
+            } else {
+                 let [currentMaxKnownValue, currentMaxKnownIndex] = [-1, -1];
+                 bot.knowledge[bot.id].forEach((card, i) => {
+                     if (card && card.value > currentMaxKnownValue) {
+                         currentMaxKnownValue = card.value;
+                         currentMaxKnownIndex = i;
+                     }
+                 });
+
+                const valueToReplace = (currentMaxKnownIndex !== -1) ? currentMaxKnownValue : 14; 
+                
+                if (drawnCard.value < valueToReplace) {
+                     const indexToSwap = (currentMaxKnownIndex !== -1) ? currentMaxKnownIndex : Math.floor(Math.random() * bot.hand.length);
+                     const discarded = bot.hand[indexToSwap];
+                     bot.hand[indexToSwap] = drawnCard;
+                     bot.knowledge[bot.id][indexToSwap] = drawnCard;
+                     state.discardPile.push(discarded);
+                     logAction(bot.id, 'swap', `用摸到的 ${drawnCard.value} 换了一张牌 (原为 ${discarded.value})`);
+                } else {
+                    state.discardPile.push(drawnCard);
+                    logAction(bot.id, 'swap', `直接弃掉了摸到的 ${drawnCard.value}`);
+                }
             }
         }
     }
 
-    // Step 5: After any action, check if it's a good time to call Cabo
     if (state.caboCalledBy === null) {
         const winProb = calculateWinProbabilityForPlayer(bot.id, PLAYER_UI_SIMULATION_COUNT);
         if (winProb >= BOT_CABO_WIN_PROB_THRESHOLD) {
@@ -622,20 +650,21 @@ function botTurn() {
         }
     }
 
-    // End turn
     setTimeout(nextTurn, 500);
 }
 
 
-// --- Win Prob, Rendering, End of Round (Unchanged from original) ---
+// --- Win Prob, Rendering, End of Round ---
 function calculateWinProbabilityForPlayer(playerId, simulationCount) {
-    if (state.gamePhase === 'gameOver' || !state.players[playerId].hand.length) return 0;
+    if (state.gamePhase === 'gameOver' || !state.players[playerId] || !state.players[playerId].hand.length) return 0;
     const perspectivePlayer = state.players[playerId];
     const knownCards = new Map();
     const addKnown = (card) => { if(card) knownCards.set(card.id, card); };
     state.discardPile.forEach(addKnown);
     for (let p = 0; p < NUM_PLAYERS; p++) {
-        for (let c = 0; c < state.players[p].hand.length; c++) {
+        const player = state.players[p];
+        if(!player) continue;
+        for (let c = 0; c < player.hand.length; c++) {
             if (perspectivePlayer.knowledge[p][c]) {
                 addKnown(perspectivePlayer.knowledge[p][c]);
             }
@@ -651,7 +680,9 @@ function calculateWinProbabilityForPlayer(playerId, simulationCount) {
         const simScores = Array(NUM_PLAYERS).fill(0);
         for (let p_idx = 0; p_idx < NUM_PLAYERS; p_idx++) {
             let currentScore = 0;
-            for (let c_idx = 0; c_idx < state.players[p_idx].hand.length; c_idx++) {
+            const player = state.players[p_idx];
+            if(!player) continue;
+            for (let c_idx = 0; c_idx < player.hand.length; c_idx++) {
                 const knownCard = perspectivePlayer.knowledge[p_idx][c_idx];
                 if (knownCard) { currentScore += knownCard.points; } 
                 else { currentScore += (shuffledUnknowns[unknownCursor++] || {points: 6.5}).points; }
@@ -659,7 +690,7 @@ function calculateWinProbabilityForPlayer(playerId, simulationCount) {
             simScores[p_idx] = currentScore;
         }
         const myScore = simScores[playerId];
-        if (myScore <= Math.min(...simScores)) { wins++; }
+        if (myScore <= Math.min(...simScores.filter(s => s !== null && s !== undefined))) { wins++; }
     }
     return wins / simulationCount;
 }
