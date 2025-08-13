@@ -8,94 +8,158 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
+    <!-- 侧边栏 -->
+    <div id="sidebar">
+        <!-- 侧边栏切换按钮 -->
+        <button id="sidebar-toggle" onclick="toggleSidebar()">
+            <span class="hamburger"></span>
+        </button>
 
-    <!-- NEW: Main container for two-column layout -->
-    <div id="main-container">
-        
-        <!-- NEW: Left column for the scoreboard -->
-        <div id="left-column">
-            <details open>
-                <summary>记分板</summary>
-                <div id="scoreboard-content" class="panel-content">
-                    <!-- Scoreboard table will be dynamically added here -->
+        <div id="sidebar-content">
+            <!-- 记分板面板 -->
+            <div class="sidebar-panel">
+                <div class="panel-header" onclick="togglePanel('scoreboard')">
+                    <span class="panel-title">📊 记分板</span>
+                    <span class="panel-arrow">▶</span>
                 </div>
-            </details>
-        </div>
+                <div class="panel-body" id="scoreboard-panel">
+                    <div id="scoreboard-content">
+                        <!-- Scoreboard table will be dynamically added here -->
+                    </div>
+                </div>
+            </div>
 
-        <!-- NEW: Right column for the game itself -->
-        <div id="right-column">
-            <div id="game-board">
-                <!-- Player 2 (Top) -->
-                <div class="player-area" id="player-2">
-                    <div class="player-name">机器人 2</div>
+            <!-- 行动日志面板 -->
+            <div class="sidebar-panel">
+                <div class="panel-header" onclick="togglePanel('action-log')">
+                    <span class="panel-title">📝 行动日志</span>
+                    <span class="panel-arrow">▶</span>
+                </div>
+                <div class="panel-body" id="action-log-panel">
+                    <div id="action-log-content">
+                        <!-- Log entries will be added here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 胜率图表面板 -->
+            <div class="sidebar-panel">
+                <div class="panel-header" onclick="togglePanel('win-chart')">
+                    <span class="panel-title">📈 胜率图表</span>
+                    <span class="panel-arrow">▶</span>
+                </div>
+                <div class="panel-body" id="win-chart-panel">
+                    <div id="win-prob-chart-container">
+                        <canvas id="winProbChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主游戏区域 -->
+    <div id="main-game-area">
+        <div id="game-board">
+            <!-- Player 2 (Top) -->
+            <div class="player-area" id="player-2">
+                <div class="player-name">机器人 2</div>
+                <div class="hand"></div>
+            </div>
+
+            <div class="center-row">
+                <!-- Player 1 (Left) -->
+                <div class="player-area" id="player-1">
+                    <div class="player-name">机器人 1</div>
                     <div class="hand"></div>
                 </div>
 
-                <div class="center-row">
-                    <!-- Player 1 (Left) -->
-                    <div class="player-area" id="player-1">
-                        <div class="player-name">机器人 1</div>
-                        <div class="hand"></div>
+                <!-- Center Piles -->
+                <div class="center-pile">
+                    <div class="card-pile deck" onclick="drawFromDeck()">
+                        <span>牌堆</span>
                     </div>
-
-                    <!-- Center Piles -->
-                    <div class="center-pile">
-                        <div class="card-pile deck" onclick="drawFromDeck()">
-                            <span>牌堆</span>
-                        </div>
-                        <div class="card-pile discard" onclick="drawFromDiscard()">
-                            <!-- Discarded cards will appear here -->
-                        </div>
-                    </div>
-
-                    <!-- Player 3 (Right) -->
-                    <div class="player-area" id="player-3">
-                        <div class="player-name">机器人 3</div>
-                        <div class="hand"></div>
+                    <div class="card-pile discard" onclick="drawFromDiscard()">
+                        <!-- Discarded cards will appear here -->
                     </div>
                 </div>
 
-                <!-- Player (Bottom) -->
-                <div class="player-area active-player" id="player-0">
-                    <div class="player-name">你</div>
+                <!-- Player 3 (Right) -->
+                <div class="player-area" id="player-3">
+                    <div class="player-name">机器人 3</div>
                     <div class="hand"></div>
                 </div>
             </div>
 
-            <div id="controls">
-                <div id="game-info">
-                    <p id="log">欢迎来到标准版 Cabo! 点击 "开始新游戏" 开始。</p>
-                    <div class="win-rate-container">
-                        <strong>当前预估胜率:</strong>
-                        <div id="win-rate-bar-container">
-                            <div id="win-rate-bar"></div>
-                        </div>
-                        <span id="win-rate-text">N/A</span>
+            <!-- Player (Bottom) -->
+            <div class="player-area active-player" id="player-0">
+                <div class="player-name">你</div>
+                <div class="hand"></div>
+            </div>
+        </div>
+
+        <!-- 控制面板 -->
+        <div id="controls">
+            <div id="game-info">
+                <p id="log">欢迎来到标准版 Cabo! 点击 "开始新游戏" 开始。</p>
+                <div class="win-rate-container">
+                    <strong>当前预估胜率:</strong>
+                    <div id="win-rate-bar-container">
+                        <div id="win-rate-bar"></div>
                     </div>
+                    <span id="win-rate-text">N/A</span>
                 </div>
+            </div>
+            <div id="control-buttons">
                 <div id="action-buttons"></div>
                 <button id="cabo-button" onclick="callCabo()">喊 Cabo!</button>
                 <button id="start-button" onclick="startGame()">开始新游戏</button>
-            </div>
-
-            <div class="collapsible-panels-container">
-                <!-- Scoreboard is now on the left -->
-                <details>
-                    <summary>行动日志</summary>
-                    <div id="action-log-content" class="panel-content">
-                        <!-- Log entries will be added here -->
-                    </div>
-                </details>
-                <details>
-                    <summary>胜率变化图</summary>
-                    <div id="win-prob-chart-container" class="panel-content">
-                        <canvas id="winProbChart"></canvas>
-                    </div>
-                </details>
             </div>
         </div>
     </div>
 
     <script src="script.js"></script>
+    <script>
+        // 侧边栏控制函数
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+        }
+
+        function togglePanel(panelName) {
+            const panel = document.getElementById(panelName + '-panel');
+            const arrow = event.currentTarget.querySelector('.panel-arrow');
+            
+            if (panel.classList.contains('expanded')) {
+                panel.classList.remove('expanded');
+                arrow.textContent = '▶';
+            } else {
+                // 关闭其他面板
+                document.querySelectorAll('.panel-body').forEach(p => {
+                    p.classList.remove('expanded');
+                });
+                document.querySelectorAll('.panel-arrow').forEach(a => {
+                    a.textContent = '▶';
+                });
+                
+                // 打开当前面板
+                panel.classList.add('expanded');
+                arrow.textContent = '▼';
+            }
+        }
+
+        // 移动端适配
+        function checkMobile() {
+            const sidebar = document.getElementById('sidebar');
+            if (window.innerWidth <= 768) {
+                sidebar.classList.add('mobile');
+                sidebar.classList.add('collapsed');
+            } else {
+                sidebar.classList.remove('mobile');
+            }
+        }
+
+        window.addEventListener('resize', checkMobile);
+        window.addEventListener('load', checkMobile);
+    </script>
 </body>
 </html>
